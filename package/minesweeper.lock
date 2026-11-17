@@ -1,0 +1,6 @@
+# Upstream: Minesweeper (in C) (Stephen Brennan, BSD-3-Clause) at this
+# commit; package/build-amiga.sh fetches it, never kept here.
+UP_URL=https://github.com/brenns10/minesweeper
+UP_COMMIT=c7cadf1f7ed57d950b400d965a7d3bbab5e50bed
+UP_VERSION=c7cadf1
+PORT_VERSION=0.1-gfos1

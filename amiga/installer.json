@@ -1,0 +1,13 @@
+{
+  "name": "Minesweeper",
+  "version": "0.1-gfos1",
+  "drawer": "Minesweeper",
+  "program": "Minesweeper",
+  "cpu": "68040",
+  "fpu": false,
+  "space": 150000,
+  "modules": [],
+  "parent": "Work:Games",
+  "badge": "icons/art/minesweeper.png",
+  "script": "Install-Minesweeper"
+}

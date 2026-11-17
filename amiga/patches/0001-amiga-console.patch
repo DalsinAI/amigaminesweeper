@@ -1,0 +1,153 @@
+diff -ru a/src/curses.c b/src/curses.c
+--- a/src/curses.c	2026-11-17 00:26:48.809925797 +0000
++++ b/src/curses.c	2026-11-17 00:27:31.200069373 +0000
+@@ -9,8 +9,14 @@
+ };
+ 
+ enum msw_color {
++#ifdef __amigaos__
++	/* pair 0 is the terminal's own colours: init_pair(0) does nothing,
++	   so the flags and the mines were never red */
++	MC_ZERO = 1,
++#else
+ 	MC_RED = 0,
+ 	MC_ZERO,
++#endif
+ 	MC_ONE,
+ 	MC_TWO,
+ 	MC_THREE,
+@@ -19,6 +25,9 @@
+ 	MC_SIX,
+ 	MC_SEVEN,
+ 	MC_EIGHT,
++#ifdef __amigaos__
++	MC_RED,
++#endif
+ };
+ 
+ static void draw_game(struct msw_curses *mc)
+@@ -87,7 +96,12 @@
+ 	mc->board = newwin(rows + 2, cols + 2, 0, 0);
+ 	mc->cur_row = mc->cur_col = 0;
+ 
++#ifdef __amigaos__
++	/* the console window is 80 columns: the messages take what is left */
++	mc->messages = newwin(rows + 2, mc->size.col - (cols + 2), 0, cols + 2);
++#else
+ 	mc->messages = newwin(rows + 2, 60, 0, cols + 2);
++#endif
+ 	scrollok(mc->messages, true);
+ 
+ 	mc->status = newwin(1, 80, rows + 2, 0);
+@@ -130,15 +144,27 @@
+ 	while (MSW_MOK(status) && (key = getch()) != 'q') {
+ 		switch (key) {
+ 		case 'h':
++#ifdef __amigaos__
++		case KEY_LEFT:
++#endif
+ 			game_move(mc, mc->cur_row, mc->cur_col - 1);
+ 			break;
+ 		case 'j':
++#ifdef __amigaos__
++		case KEY_DOWN:
++#endif
+ 			game_move(mc, mc->cur_row + 1, mc->cur_col);
+ 			break;
+ 		case 'k':
++#ifdef __amigaos__
++		case KEY_UP:
++#endif
+ 			game_move(mc, mc->cur_row - 1, mc->cur_col);
+ 			break;
+ 		case 'l':
++#ifdef __amigaos__
++		case KEY_RIGHT:
++#endif
+ 			game_move(mc, mc->cur_row, mc->cur_col + 1);
+ 			break;
+ 		case 'd':
+@@ -180,7 +206,28 @@
+ 		draw_game(mc);
+ 		doupdate();
+ 		msw_end_turn(&mc->game);
++#ifdef __amigaos__
++		/* upstream's curses game never ends on a win */
++		/* (no grid until the first dig) */
++		if (MSW_MOK(status) && mc->game.grid && msw_won(&mc->game)) {
++			status = MSW_MWIN;
++			break;
++		}
++#endif
++	}
++#ifdef __amigaos__
++	/* the end stays in the window until a key: a Workbench start would
++	   otherwise close it at once */
++	if (status == MSW_MBOOM || status == MSW_MWIN) {
++		wmove(mc->status, 0, 0);
++		wprintw(mc->status, "%s  Press a key.", status == MSW_MWIN ?
++		        "You win! Every mine found." : "Boom! You dug up a mine.");
++		wclrtoeol(mc->status);
++		wnoutrefresh(mc->status);
++		doupdate();
++		getch();
+ 	}
++#endif
+ }
+ 
+ int curses_main(int argc, char **argv)
+diff -ru a/src/main.c b/src/main.c
+--- a/src/main.c	2026-11-17 00:26:48.810007720 +0000
++++ b/src/main.c	2026-11-17 00:28:59.906616204 +0000
+@@ -17,8 +17,14 @@
+ 
+ static void usage(char *name)
+ {
++#ifdef __amigaos__
++  printf("usage: %s [cli|curses]\n", name);
++#else
+   printf("usage: %s [gui|cli]\n", name);
++#endif
++#ifndef __amigaos__
+   printf("\tgui: Use the GTK version.\n");
++#endif
+   printf("\tcli: Use the command line version.\n");
+   printf("\tcurses: Use the curses version.\n");
+   exit(EXIT_FAILURE);
+@@ -26,13 +32,22 @@
+ 
+ int main(int argc, char *argv[])
+ {
++#ifdef __amigaos__
++  /* from Workbench (or a Shell with no arguments): the curses game */
++  if (argc < 2) {
++    return curses_main(argc, argv);
++  }
++#endif
+   if (argc < 2) {
+     usage(argv[0]);
+   }
+ 
++#ifndef __amigaos__
+   if (strcmp(argv[1], "gui") == 0) {
+     return gui_main(argc - 1, argv + 1);
+-  } else if (strcmp(argv[1], "cli") == 0) {
++  } else
++#endif
++  if (strcmp(argv[1], "cli") == 0) {
+     return cli_main(argc - 1, argv + 1);
+   } else if (strcmp(argv[1], "curses") == 0) {
+     return curses_main(argc - 1, argv + 1);
+diff -ru a/src/minesweeper.h b/src/minesweeper.h
+--- a/src/minesweeper.h	2026-11-17 00:26:48.810044351 +0000
++++ b/src/minesweeper.h	2026-11-17 00:27:44.715403986 +0000
+@@ -123,7 +123,8 @@
+ #define for_each_neigh(game, NEIGHVAR, PLOC, IVAR) \
+ 	for (NEIGHVAR = (struct msw_loc){.row=(PLOC)->row + rnbr[0], .col=(PLOC)->col + cnbr[0]}, IVAR = 0; \
+ 	     IVAR < NUM_NEIGHBORS; \
+-	     IVAR++, NEIGHVAR = (struct msw_loc){.row=(PLOC)->row + rnbr[IVAR], .col=(PLOC)->col + cnbr[IVAR]}) \
++	     /* (the last step read rnbr[8] and cnbr[8], past the arrays) */ \
++	     IVAR++, NEIGHVAR = (struct msw_loc){.row=(PLOC)->row + rnbr[IVAR % NUM_NEIGHBORS], .col=(PLOC)->col + cnbr[IVAR % NUM_NEIGHBORS]}) \
+ 	     if (msw_inbound(game, NEIGHVAR))
+ 
+ static inline int msw_inbound(msw *game, struct msw_loc loc)
